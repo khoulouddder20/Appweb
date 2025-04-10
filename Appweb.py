@@ -113,7 +113,7 @@ st.title("📍 BLE Indoor Positioning System")
 # Guide
 with st.expander("📘 Guide - About the Project"):
     st.markdown("""
-    **🔧 Description:**  
+    **🔧 Description:hhhhhhhhhhh**  
     This project uses **Bluetooth Low Energy (BLE)** beacons to estimate the position of a device indoors using **trilateration**.
 
     **🧠 How it Works:**  
