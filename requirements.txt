@@ -1,0 +1,7 @@
+streamlit
+asyncio
+nest_asyncio
+numpy
+bleak
+matplotlib
+pandas
