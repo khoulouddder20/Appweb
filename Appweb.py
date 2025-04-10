@@ -8,6 +8,9 @@ from datetime import datetime
 from collections import deque
 import pandas as pd
 import time
+import json
+from flask import Flask, request
+from threading import Thread
 
 # Allow nested async calls in Streamlit
 nest_asyncio.apply()
@@ -85,6 +88,24 @@ async def scan_ble():
 def run_async_task(task):
     return asyncio.get_event_loop().run_until_complete(task)
 
+# Flask app to handle BLE data
+app = Flask(__name__)
+
+@app.route("/update_ble_data", methods=["POST"])
+def update_ble_data():
+    data = json.loads(request.data)
+    device_name = data.get("device_name")
+    device_id = data.get("device_id")
+    st.session_state['scanned_devices'].append((device_name, device_id))
+    return {"status": "success"}
+
+# Run the Flask app in a separate thread
+def run_flask():
+    app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)
+
+# Start the Flask app in the background
+Thread(target=run_flask).start()
+
 # Streamlit UI
 st.set_page_config(page_title="BLE Indoor Positioning", layout="centered")
 st.title("📍 BLE Indoor Positioning System")
@@ -120,15 +141,9 @@ with st.expander("🛠️ Configure Beacons"):
     
     # Display beacon configuration sliders based on room dimensions
     for i, mac in enumerate(st.session_state["BEACONS"]):
-        # Adjust beacon position sliders based on the custom room dimensions
         x = st.slider(f"Beacon {i+1} X (MAC: {mac})", 0.0, room_width, st.session_state["BEACONS"][mac][0], 0.1)
         y = st.slider(f"Beacon {i+1} Y (MAC: {mac})", 0.0, room_height, st.session_state["BEACONS"][mac][1], 0.1)
-        
-        # Update beacon coordinates in session state
         st.session_state["BEACONS"][mac] = (x, y)
-
-
-
 
 # Initialize session states
 if "position_log" not in st.session_state:
@@ -155,8 +170,6 @@ if realtime:
             if pos is not None:
                 st.session_state.position_log.append(pos)
                 st.success(f"📍 Estimated Position: x={pos[0]:.2f}m, y={pos[1]:.2f}m")
-                
-                # Plot the position
                 fig, ax = plt.subplots()
                 for mac, (x, y) in b.items():
                     ax.plot(x, y, 'bo')
@@ -231,7 +244,7 @@ with st.expander("📈 Position Trail"):
 
     for idx, (mac, (x, y)) in enumerate(st.session_state["BEACONS"].items(), start=1):
         ax2.plot(x, y, 'bo')
-        ax2.text(x + 0.1, y, f"Beacon {idx}", fontsize=8)  # 👈 affichage du nom sans adresse MAC
+        ax2.text(x + 0.1, y, f"Beacon {idx}", fontsize=8)
 
     ax2.set_xlim(0, 4)
     ax2.set_ylim(0, 7)
@@ -240,7 +253,6 @@ with st.expander("📈 Position Trail"):
     ax2.set_ylabel("Y (m)")
     ax2.grid(True)
     st.pyplot(fig2)
-
 
 # Export button
 if st.button("💾 Export Position Log"):
