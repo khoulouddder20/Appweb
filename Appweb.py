@@ -2,6 +2,11 @@ import streamlit as st
 import numpy as np
 from datetime import datetime
 from collections import deque
+import asyncio
+import matplotlib.pyplot as plt
+import pandas as pd
+import time
+
 
 # BLE beacons' real coordinates (default)
 def get_default_beacons():
