@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import time
 
+# ✅ SET PAGE CONFIG FIRST
+# Streamlit UI
+st.set_page_config(page_title="BLE Indoor Positioning", layout="centered")
+st.title("📍 BLE Indoor Positioning System")
 
 # BLE beacons' real coordinates (default)
 def get_default_beacons():
@@ -143,9 +147,7 @@ if st.button("Process Scanned Data"):
             st.warning("Trilateration failed. Adjust input values.")
 
 
-# Streamlit UI
-st.set_page_config(page_title="BLE Indoor Positioning", layout="centered")
-st.title("📍 BLE Indoor Positioning System")
+
 
 # Guide
 with st.expander("📘 Guide - About the Project"):
