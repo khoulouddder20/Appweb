@@ -8,7 +8,6 @@ import pandas as pd
 import time
 
 # ✅ SET PAGE CONFIG FIRST
-# Streamlit UI
 st.set_page_config(page_title="BLE Indoor Positioning", layout="centered")
 st.title("📍 BLE Indoor Positioning System")
 
@@ -22,6 +21,12 @@ def get_default_beacons():
 
 if "BEACONS" not in st.session_state:
     st.session_state["BEACONS"] = get_default_beacons()
+
+if "position_log" not in st.session_state:
+    st.session_state["position_log"] = []
+
+if "room_size" not in st.session_state:
+    st.session_state["room_size"] = {"width": 7.0, "height": 4.0}
 
 TX_POWER = -59
 N = 2.5
@@ -65,9 +70,9 @@ def trilaterate(p1, r1, p2, r2, p3, r3):
 def scan_ble():
     distances = {}
     timestamp = datetime.now().strftime("%H:%M:%S")
-    
+
     scanned_devices = st.session_state.get("web_ble_devices", {})
-    
+
     for mac, rssi in scanned_devices.items():
         if mac in st.session_state["BEACONS"]:
             filtered_rssi = kalman_filters[mac].update(rssi)
@@ -79,10 +84,20 @@ def scan_ble():
                 distances[mac] = avg_distance
 
     return distances
+# BLE Scanner section
+st.markdown("## 🛰️ BLE Scanner (Simulated)")
+st.write("Click the button below to simulate a BLE scan (real BLE scanning requires browser integration).")
 
-# Inject JavaScript for Web Bluetooth scanning
-st.markdown("## 🛰️ BLE Scanner (Web Bluetooth API)")
-st.write("Click the button below to scan for BLE devices (browser support required).")
+if st.button("🔍 Start BLE Scan"):
+    # Simulate BLE scan with random RSSI values
+    st.session_state["web_ble_devices"] = {
+        "BE:AC:F5:26:EC:AA": np.random.randint(-75, -65),
+        "09:8C:D3:F6:55:E8": np.random.randint(-78, -70),
+        "EB:2B:9C:7D:C8:0E": np.random.randint(-70, -60),
+    }
+    st.success("✅ Simulated BLE scan completed!")
+    st.json(st.session_state["web_ble_devices"])
+
 
 st.components.v1.html("""
     <script>
@@ -94,7 +109,7 @@ st.components.v1.html("""
             });
 
             const server = await device.gatt.connect();
-            const rssi = Math.floor(Math.random() * 20) - 80; // Simulate RSSI
+            const rssi = Math.floor(Math.random() * 20) - 80;
             const mac = device.id;
 
             const pyMsg = {
@@ -126,116 +141,42 @@ st.session_state["web_ble_devices"] = {
     "EB:2B:9C:7D:C8:0E": -65,
 }
 
-# Run BLE scan and show results
-if st.button("Process Scanned Data"):
-    distances = scan_ble()
-    st.write("📡 Estimated Distances (meters):")
-    st.json(distances)
+# Sidebar for room and beacon configuration
+st.sidebar.header("Room Configuration")
+room_width = st.sidebar.slider("Room Width (meters)", 1.0, 10.0, st.session_state["room_size"]["width"], 0.1)
+room_height = st.sidebar.slider("Room Height (meters)", 1.0, 10.0, st.session_state["room_size"]["height"], 0.1)
+st.session_state["room_size"] = {"width": room_width, "height": room_height}
 
-    # Optionally trilaterate and display result
-    if len(distances) >= 3:
-        beacons = st.session_state["BEACONS"]
-        macs = list(distances.keys())[:3]
-        pos = trilaterate(
-            beacons[macs[0]], distances[macs[0]],
-            beacons[macs[1]], distances[macs[1]],
-            beacons[macs[2]], distances[macs[2]],
-        )
-        if pos is not None:
-            st.success(f"Estimated Position: x={pos[0]:.2f}, y={pos[1]:.2f}")
-        else:
-            st.warning("Trilateration failed. Adjust input values.")
+st.sidebar.header("Beacon Configuration")
+for mac in st.session_state["BEACONS"]:
+    x = st.sidebar.slider(f"Beacon {mac[-5:]} X", 0.0, room_width, st.session_state["BEACONS"][mac][0], 0.1)
+    y = st.sidebar.slider(f"Beacon {mac[-5:]} Y", 0.0, room_height, st.session_state["BEACONS"][mac][1], 0.1)
+    st.session_state["BEACONS"][mac] = (x, y)
 
+# Real-time scanning section
+with st.expander("🔁 Real-Time Scanning"):
+    realtime = st.checkbox("Enable Real-Time Scanning")
+    if realtime:
+        interval = st.slider("Scan Interval (seconds)", 2, 10, 5)
+        if st.button("Start Scanning"):
+            st.session_state["scanning"] = True
 
+        if st.session_state.get("scanning"):
+            distances = asyncio.run(scan_ble())
+            if len(distances) >= 3:
+                keys = list(distances.keys())[:3]
+                b = st.session_state["BEACONS"]
+                p1, r1 = b[keys[0]], distances[keys[0]]
+                p2, r2 = b[keys[1]], distances[keys[1]]
+                p3, r3 = b[keys[2]], distances[keys[2]]
+                pos = trilaterate(p1, r1, p2, r2, p3, r3)
+                if pos is not None:
+                    st.session_state["position_log"].append(pos)
+                    st.success(f"📍 Estimated Position: x={pos[0]:.2f}m, y={pos[1]:.2f}m")
+            time.sleep(interval)
+            st.experimental_rerun()
 
-
-# Guide
-with st.expander("📘 Guide - About the Project"):
-    st.markdown("""
-    **🔧 Description:**  
-    This project uses **Bluetooth Low Energy (BLE)** beacons to estimate the position of a device indoors using **trilateration**.
-
-    **🧠 How it Works:**  
-    - BLE beacons send signals with a strength called **RSSI**.  
-    - A **Kalman Filter** smooths the signal to reduce noise.  
-    - The filtered RSSI is converted to distance.  
-    - With 3 known distances, **trilateration** estimates the device's 2D position.  
-    - The result is plotted on a virtual map.
-
-    **📏 Room Size:** 7m x 4m  
-    **📍 Beacons:** 3 fixed in known positions  
-    **📡 Scanner:** This app scans BLE and estimates position in real-time.
-    """)
-
-# Beacon configuration
-with st.expander("🛠️ Configure Beacons"):
-    for mac in st.session_state["BEACONS"]:
-        x = st.slider(f"{mac[-5:]} X", 0.0, 7.0, st.session_state["BEACONS"][mac][0], 0.1)
-        y = st.slider(f"{mac[-5:]} Y", 0.0, 4.0, st.session_state["BEACONS"][mac][1], 0.1)
-        st.session_state["BEACONS"][mac] = (x, y)
-
-# Position log
-if "position_log" not in st.session_state:
-    st.session_state["position_log"] = []
-
-if "scanning" not in st.session_state:
-    st.session_state["scanning"] = False
-
-# Real-time scanning toggle
-realtime = st.checkbox("🔁 Enable Real-Time Scanning")
-if realtime:
-    interval = st.slider("Scan Interval (seconds)", 2, 10, 5)
-    if st.button("Start Scanning"):
-        st.session_state["scanning"] = True
-
-    if st.session_state["scanning"]:
-        distances = asyncio.run(scan_ble())
-        if len(distances) >= 3:
-            keys = list(distances.keys())[:3]
-            b = st.session_state["BEACONS"]
-            p1, r1 = b[keys[0]], distances[keys[0]]
-            p2, r2 = b[keys[1]], distances[keys[1]]
-            p3, r3 = b[keys[2]], distances[keys[2]]
-            pos = trilaterate(p1, r1, p2, r2, p3, r3)
-            if pos is not None:
-                st.session_state["position_log"].append(pos)
-                st.success(f"📍 Estimated Position: x={pos[0]:.2f}m, y={pos[1]:.2f}m")
-        time.sleep(interval)
-        st.experimental_rerun()
-
-# BLE Scan Button
-if st.button("📡 Scan for BLE Beacons"):
-    with st.spinner("Scanning nearby BLE devices..."):
-        distances = asyncio.run(scan_ble())
-        if len(distances) >= 3:
-            keys = list(distances.keys())[:3]
-            b = st.session_state["BEACONS"]
-            p1, r1 = b[keys[0]], distances[keys[0]]
-            p2, r2 = b[keys[1]], distances[keys[1]]
-            p3, r3 = b[keys[2]], distances[keys[2]]
-            pos = trilaterate(p1, r1, p2, r2, p3, r3)
-            if pos is not None:
-                st.session_state["position_log"].append(pos)
-                st.success(f"📍 Estimated Position: x={pos[0]:.2f}m, y={pos[1]:.2f}m")
-                fig, ax = plt.subplots()
-                for mac, (x, y) in b.items():
-                    ax.plot(x, y, 'bo')
-                    ax.text(x + 0.1, y, mac[-5:], fontsize=8)
-                ax.plot(pos[0], pos[1], 'ro')
-                ax.text(pos[0] + 0.1, pos[1], "📱 Device", fontsize=9)
-                ax.set_xlim(0, 7)
-                ax.set_ylim(0, 4)
-                ax.set_title("📌 Position Map")
-                ax.set_xlabel("X (meters)")
-                ax.set_ylabel("Y (meters)")
-                ax.grid(True)
-                st.pyplot(fig)
-            else:
-                st.error("❌ Trilateration failed. Try scanning again.")
-        else:
-            st.warning("⚠️ Less than 3 beacons detected.")
-
-# RSSI Graph Button
+# RSSI Graph
 if st.button("📉 Show RSSI Graph History"):
     st.subheader("📶 RSSI History per Beacon")
     fig_rssi, ax_rssi = plt.subplots()
@@ -250,24 +191,21 @@ if st.button("📉 Show RSSI Graph History"):
     ax_rssi.grid(True)
     st.pyplot(fig_rssi)
 
-# Trail view
+# Position trail display
 with st.expander("📈 Position Trail"):
-    fig2, ax2 = plt.subplots()
     trail = np.array(st.session_state["position_log"])
     if len(trail) > 0:
-        ax2.plot(trail[:, 0], trail[:, 1], 'r.-', label="Path")
-    for mac, (x, y) in st.session_state["BEACONS"].items():
-        ax2.plot(x, y, 'bo')
-        ax2.text(x + 0.1, y, mac[-5:], fontsize=8)
-    ax2.set_xlim(0, 7)
-    ax2.set_ylim(0, 4)
-    ax2.set_title("📍 Movement Trail")
-    ax2.set_xlabel("X (m)")
-    ax2.set_ylabel("Y (m)")
-    ax2.grid(True)
-    st.pyplot(fig2)
+        fig, ax = plt.subplots()
+        ax.plot(trail[:, 0], trail[:, 1], 'r.-', label="Path")
+        ax.set_xlim(0, st.session_state["room_size"]["width"])
+        ax.set_ylim(0, st.session_state["room_size"]["height"])
+        ax.set_title("📍 Movement Trail")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.grid(True)
+        st.pyplot(fig)
 
 # Export button
-if st.button("💾 Export Position Log"):
+if st.button("📂 Export Position Log"):
     df = pd.DataFrame(st.session_state["position_log"], columns=["X", "Y"])
-    st.download_button("📥 Download CSV", df.to_csv(index=False), file_name="position_log.csv", mime="text/csv")
+    st.download_button("📅 Download CSV", df.to_csv(index=False), file_name="position_log.csv", mime="text/csv")
